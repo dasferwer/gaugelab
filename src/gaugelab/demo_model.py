@@ -59,7 +59,7 @@ async def generate(body: Input):
             output = "Не знаю"
         if "DEMO_VERBOSE" in prompt:
             output = "Подробный ответ: " + output
-    # Это условные единицы эмулятора, а не токенизация реальной языковой модели.
+    # Считаем условные единицы эмулятора. Они не соответствуют токенам реальной модели.
     return {
         "model_digest": "demo-v1",
         "text": output,

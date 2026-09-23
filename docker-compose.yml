@@ -1,0 +1,82 @@
+name: 26-gaugelab
+x-environment: &environment
+  DATABASE_URL: postgresql+asyncpg://gauge:gauge@database:5432/gauge
+  ADMIN_TOKEN: ${ADMIN_TOKEN:?Run make init first}
+  DEMO_URL: http://model:8000
+  OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+x-app: &app
+  build:
+    context: .
+    target: runtime
+  init: true
+  environment: *environment
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+x-postgres: &postgres
+  image: postgres:17-alpine
+  environment:
+    POSTGRES_DB: gauge
+    POSTGRES_USER: gauge
+    POSTGRES_PASSWORD: gauge
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U gauge -d gauge"]
+    interval: 2s
+    timeout: 3s
+    retries: 40
+x-worker: &worker
+  <<: *app
+  command: ["python", "-m", "gaugelab.worker"]
+  extra_hosts: ["host.docker.internal:host-gateway"]
+  healthcheck:
+    test: ["CMD", "python", "scripts/process_health.py"]
+    interval: 3s
+    timeout: 3s
+    retries: 40
+services:
+  database:
+    <<: *postgres
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
+  migrate:
+    <<: *app
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      database:
+        condition: service_healthy
+  api:
+    <<: *app
+    ports: ["127.0.0.1:8260:8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready')"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+  worker:
+    <<: *worker
+  worker-2:
+    <<: *worker
+  model:
+    <<: *app
+    command: ["uvicorn", "gaugelab.demo_model:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+  test-db:
+    <<: *postgres
+    profiles: ["test"]
+    tmpfs: [/var/lib/postgresql/data]
+  test:
+    profiles: ["test"]
+    build:
+      context: .
+      target: test
+    environment:
+      DATABASE_URL: postgresql+asyncpg://gauge:gauge@test-db:5432/gauge
+      ADMIN_TOKEN: test-gaugelab-admin-token-long-enough
+    depends_on:
+      test-db:
+        condition: service_healthy
+volumes:
+  postgres_data:

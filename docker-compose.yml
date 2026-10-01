@@ -65,6 +65,15 @@ services:
       retries: 40
   test-db:
     <<: *postgres
+    environment:
+      POSTGRES_DB: gauge_test
+      POSTGRES_USER: gauge
+      POSTGRES_PASSWORD: gauge
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gauge -d gauge_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 40
     profiles: ["test"]
     tmpfs: [/var/lib/postgresql/data]
   test:
@@ -73,7 +82,8 @@ services:
       context: .
       target: test
     environment:
-      DATABASE_URL: postgresql+asyncpg://gauge:gauge@test-db:5432/gauge
+      TESTING: "1"
+      DATABASE_URL: postgresql+asyncpg://gauge:gauge@test-db:5432/gauge_test
       ADMIN_TOKEN: test-gaugelab-admin-token-long-enough
     depends_on:
       test-db:
